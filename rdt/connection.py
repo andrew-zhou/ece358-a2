@@ -3,6 +3,7 @@
 from rdt.segment import Segment, SegmentFlags
 
 from enum import Enum
+from heapq import heappush, heappop
 from socket import socket, AF_INET, SOCK_DGRAM
 from threading import Lock
 from time import sleep
@@ -12,7 +13,7 @@ class Connection(object):
 	MAX_PAYLOAD_SIZE = 480
 	MAX_SEQ = 2 ** 32
 
-	def __init__(self, my_ip, my_port):
+	def __init__(self, my_ip, my_port, their_ip, their_port):
 		"""Connection is the rdt equivalent of a TCP client socket. Use for
 		sending/receiving data in a dedicated connection with a single peer.
 
@@ -20,9 +21,9 @@ class Connection(object):
 			my_ip: (string) IP Address of current client
 			my_port: (int) Port of current client
 		"""
-		self.tcb = ConnectionTCB(my_ip, my_port)
-		self.send_buffer = ConnectionBuffer()
-		self.recv_buffer = ConnectionBuffer()
+		self.tcb = ConnectionTCB(my_ip, my_port, their_ip, their_port)
+		self.send_buffer = ConnectionBuffer(buf=[])
+		self.recv_buffer = ConnectionBuffer(buf=ConnectionReceiveWindow())
 		self.timer = ConnectionSendTimer(self.TIMEOUT_INTERVAL, self._timeout)
 		self.seq = 0  # Keep track of the earliest sent un-ack'd segment 
 		self.next_seq = 0  # Keep track of the next seq number to send
@@ -43,6 +44,10 @@ class Connection(object):
 
 		data: (bytes) Bytes to send as payload
 		"""
+		# Check if connection is closed
+		if self.status() == ConnectionStatus.CLOSED:
+			raise ConnectionClosedException()
+
 		# Break payload into chunks of max payload size
 		chunks = [data[i:i + self.MAX_PAYLOAD_SIZE] for i in range(0, len(data), self.MAX_PAYLOAD_SIZE)]
 
@@ -50,26 +55,35 @@ class Connection(object):
 		for chunk in chunks:
 			self._send_new(chunk, SegmentFlags(ack=True))
 
-	def recv(self):
-		"""Returns the payload of the next in-order segment received from the peer.
-		This is a blocking call.
+	def recv(self, max_size):
+		"""Returns the payload of received and buffered data up to max_size.
+		This is a blocking call - it will block if the next in-order byte is not yet received.
 		"""
 		# In an attempt to make this more performant, we sleep for a second between
-		# iterations of acquiring the buffer mutex and iterating through the buffer in
-		# an attempt to avoid hogging the mutex
-
-		# TODO: Might have to check connection status after every iteration to kill on close
+		# iterations of acquiring the buffer mutex in an attempt to avoid hogging the mutex.
 		data = None
 		while True:
+			# Raise exception if connection is closed.
+			if self.status() == ConnectionStatus.CLOSED:
+				raise ConnectionClosedException()
 			with self.recv_buffer.lock:
-				if self.ack in self.recv_buffer.buffer:
-					data = self.recv_buffer.buffer[self.ack]
+				if self.recv_buffer.buffer.ready():
+					data = self.recv_buffer.buffer.get(max_size)
 					break
 			sleep(1)
 
 		# Shift the base ack
 		self.ack = (self.ack + len(data)) % self.MAX_SEQ
 		return data
+
+	def close(self):
+		"""Closes the connection with the peer."""
+		# Handle closing logic
+		self.timer.stop()
+		# Send FIN
+		self._send(b'', SegmentFlags(syn=False, ack=False, fin=True), self.next_seq)
+		# Update status
+		self.tcb.status = ConnectionStatus.CLOSED
 
 	# === Helper Methods - Do NOT Call in Application Layer ===
 	def _send_new(self, data, flags):
@@ -83,7 +97,7 @@ class Connection(object):
 		# Add to send_buffer
 		block = ConnectionSentBlock(data, seq, flags)
 		with self.send_buffer.lock:
-			self.send_buffer.buffer[seq] = block
+			heappush(self.send_buffer.buffer, (seq, block))
 
 		# Start timer if not already started
 		self.timer.start()
@@ -92,7 +106,7 @@ class Connection(object):
 		# Create segment
 		source = self.tcb.my_port
 		dest = self.tcb.their_port
-		ack = self.ack
+		ack = self.next_ack
 		segment = Segment(source, dest, seq, ack, flags, data)
 
 		# Send via. UDP
@@ -102,8 +116,7 @@ class Connection(object):
 		# Get data/seq/flags for segment corresponding to self.seq
 		block = None
 		with self.send_buffer.lock:
-			if self.seq in self.send_buffer.buffer:
-				block = self.send_buffer.buffer[self.seq]
+			block = self.send_buffer.buffer[0][1]
 
 		# Re-send segment
 		if block:
@@ -115,97 +128,109 @@ class Connection(object):
 		related segments (ie. SYN, FIN).
 		"""
 		# ACK all sent segments up to segment.ack
-		def _within_bounds(val, lo, hi):
+		def _bytes_to_ack(val, lo, hi):
 			wraparound = lo > hi
-			return (
-				(wraparound and (val > lo or val <= self.hi)) or
+			is_valid = (
+				(wraparound and (val > lo or val <= hi)) or
 				(not wraparound and val > lo and val <= hi)
 			)
+			if not is_valid:
+				return 0
+			if wraparound and val < lo:
+				return (Connection.MAX_SEQ - lo) + val
+			else:
+				return val - lo
 
 		if segment.flags.ack:
 			ack = segment.ack
 			with self.send_buffer.lock:
-				while _within_bounds(ack, self.seq, self.next_seq)
-					block = self.send_buffer.buffer.get(self.seq)
-					if not block:
-						# There was some logic error - this should never happen
-						raise Exception('Programming error')
-					self.seq = (self.seq + len(block.data)) % self.MAX_SEQ
-					del self.send_buffer.buffer[self.seq]
+				bytes_to_ack = _bytes_to_ack(ack, self.seq, self.next_seq)
+				self.seq = (self.seq + bytes_to_ack) % self.MAX_SEQ
+				while bytes_to_ack > 0 and self.send_buffer.buffer:
+					seq, block = heappop(self.send_buffer.buffer)
+					if len(block.data) > bytes_to_ack:
+						# Do a partial ACK
+						new_data = block.data[bytes_to_ack:]
+						new_seq = seq + bytes_to_ack
+						new_block = ConnectionSentBlock(new_data, new_seq, block.flags)
+						heappush(self.send_buffer.buffer, (new_seq, new_block))
+					bytes_to_ack -= len(block.data)
 
 		# Store payload in recv buffer
-		# Since there's the potential for re-ordered segments in a wraparound
-		# situation where their validity is ambiguous, and there is no space
-		# in the header to add timestamps to do something like PAWS (see: RFC-1323),
-		# we do the following:
-		# consider the window of available bytes between next_ack and ack (ie. not
-		# currently used). The half of those bytes closer to next_ack we accept and
-		# store in the buffer. The half closer to ack we reject assuming that they
-		# were re-ordered and stale
 		seq = segment.seq
-		if _within_bounds(seq, self.ack, self.next_ack):
-			# This is a duplicate segment; ignore
-			# === This is a big question??? ===
-			# TODO: Do we need to consider appending bytes from this segment if
-			# it starts within data that we have but continues past next_ack?
-			return
-		# === This is a big question??? ===
-		# TODO: What about collisions with other data in the buffer???
-		pass 
+		offset = seq - self.ack if seq >= self.ack else (seq + self.MAX_SEQ - self.ack)
+		with self.recv_buffer.lock:
+			self.recv_buffer.buffer.put(segment.payload, offset)
+			self.next_ack = self.ack + self.recv_buffer.buffer.expected
+
 
 	# === Connection Establishment Methods - Do NOT Call in Application Layer ===
 	# TODO: All of these
 
-	def _listen(self):
-		if self.status() == ConnectionStatus.CLOSED:
-			self.tcb.status = ConnectionStatus.LISTEN
-
 	def _send_syn(self, their_ip, their_port):
 		if self.status() == ConnectionStatus.CLOSED:
-			# TODO: Send SYN
 			self.tcb.status = ConnectionStatus.SYN_SENT
+			# Send SYN packet
+			self._send_new(b'', SegmentFlags(syn=True, ack=False, fin=False))
 
-	def _recv_syn(self, their_ip, their_port, seq):
-		if self.status() == ConnectionStatus.LISTEN:
+	def _recv_syn(self, segment):
+		if self.status() == ConnectionStatus.CLOSED:
 			self.tcb.status = ConnectionStatus.SYN_RECD
-			self.tcb.their_ip = their_ip
-			self.tcb.their_port = their_port
-			# TODO: Handle receiving the SYN
-			# TODO: Send SYN/ACK back
+			# Handle receiving the SYN
+			self.ack = (segment.seq + 1) % self.MAX_SEQ
+			self.next_ack = self.ack
+			# Send SYN/ACK back
+			self._send_new(b'', SegmentFlags(syn=True, ack=True, fin=False))
 
-	def _recv_syn_ack(self, data=None):
-		# Can optionally piggy-back data onto the ACK
+	def _recv_syn_ack(self, segment):
 		if self.status() == ConnectionStatus.SYN_SENT:
-			# TODO: Handle receiving the SYN/ACK
+			# Handle receiving the SYN/ACK
+			self.ack = (segment.seq + 1) % self.MAX_SEQ
+			self.next_ack = self.ack
+			self.seq = segment.ack
+			self.next_seq = segment.ack
+			with self.send_buffer.lock:
+				self.send_buffer.buffer.clear()
+			# Send ACK
+			self._send_new(b'', SegmentFlags(syn=False, ack=True, fin=False)) 
 			self.tcb.status = ConnectionStatus.ESTAB
 
-	def _establish(self):
-		if self.tcb.status == ConnectionStatus.SYN_SENT or self.tcb.status == ConnectionStatus.SYN_RECV:
+	def _establish(self, segment):
+		if self.tcb.status == ConnectionStatus.SYN_RECD:
 			self.tcb.status = ConnectionStatus.ESTAB
+			# Handle receiving the ACK
+			self.seq = segment.ack
+			self.next_seq = segment.ack
+			# Clear the send buffer
+			with self.send_buffer.lock:
+				self.send_buffer.buffer.clear()
 
-	def _recv_fin(self):
+	def _recv_fin(self, segment):
 		if self.tcb.status == ConnectionStatus.ESTAB:
-			# TODO: Handle closing logic (ie. shutdown timer, flush TCB, etc.)
-			# TODO: Handle receiving the FIN
-			# TODO: Send ACK back
+			# Handle closing logic
+			self.timer.stop()
+			# Handle receiving the FIN
+			self.next_ack = (segment.seq + 1) % self.MAX_SEQ
+			# Send ACK back
+			self._send(b'', SegmentFlags(syn=False, ack=True, fin=False), self.next_seq)
+			# Update status
 			self.tcb.status = ConnectionStatus.CLOSED
 
 
 class ConnectionTCB(object):
-	def __init__(self, my_ip, my_port):
+	def __init__(self, my_ip, my_port, their_ip, their_port):
 		self.my_ip = my_ip
 		self.my_port = my_port
-		self.their_ip = None
-		self.their_port = None
+		self.their_ip = their_ip
+		self.their_port = their_port
 		self.status = ConnectionStatus.CLOSED
 
 
 class ConnectionStatus(Enum):
 	CLOSED = 1
-	LISTEN = 2
-	SYN_SENT = 3
-	SYN_RECD = 4
-	ESTAB = 5
+	SYN_SENT = 2
+	SYN_RECD = 3
+	ESTAB = 4
 
 
 class ConnectionSentBlock(object):
@@ -229,6 +254,7 @@ class ConnectionSendTimer(object):
 	def start(self):
 		if not self.is_running:
 			self._timer = Timer(self.interval, self._run)
+			self._timer.daemon = True
 			self._timer.start()
 			self.is_running = True
 
@@ -242,10 +268,66 @@ class ConnectionSendTimer(object):
 		self.start()
 
 class ConnectionBuffer(object):
-	"""Very crude concurrent dict - literally just a lock and a dict.
+	"""Very crude concurrent buffer - literally just a lock and a buffer (ie. list, dict).
 	Basically just a reminder to always acquire the buffer's lock before
 	attempting to access the buffer.
 	"""
-	def __init__(self):
+	def __init__(self, buf):
 		self.lock = Lock()
-		self.buffer = {}
+		self.buffer = buf
+
+
+class ConnectionReceiveWindow(object):
+	"""Circular buffer. Keeps track of base and next ack."""
+	WINDOW_SIZE = 2 ** 20
+	def __init__(self):
+		self._arr = [None] * self.WINDOW_SIZE
+		self.start = 0  # Index of start of circular buffer
+		self.expected = 0  # Offset from start to next expected byte (exclusive)
+
+	def put(self, data, offset):
+		trimmed_data = data[:max(self.WINDOW_SIZE - offset, 0)]
+		if not trimmed_data:
+			return
+		ini = self.start + offset
+		if ini < self.WINDOW_SIZE:
+			forward_length = min(len(trimmed_data), self.WINDOW_SIZE - ini)
+			self._arr[ini:ini+forward_length] = trimmed_data[:forward_length]
+			wrap_length = len(trimmed_data) - forward_length
+			if wrap_length:
+				self._arr[:wrap_length] = trimmed_data[forward_length:]
+		else:
+			ini -= self.WINDOW_SIZE
+			self._arr[ini:ini + len(trimmed_data)] = trimmed_data
+		self.expected = self._calculate_expected()
+
+	def get(self, max_size):
+		size = min(max_size, self.expected)
+		if size <= 0:
+			return None
+		data = []
+		if size > self.WINDOW_SIZE - self.start:
+			# Need to wrap around
+			data = self._arr[self.start:]
+			self._arr[self.start:] = [None] * (self.WINDOW_SIZE - self.start)
+			size -= self.WINDOW_SIZE - self.start
+			self.start = 0
+		data += self._arr[self.start:self.start + size]
+		self._arr[self.start:self.start + size] = [None] * size
+		self.start += size
+		self.expected -= size
+		return bytes(data)
+
+	def ready(self):
+		return self.expected > 0
+
+	def _calculate_expected(self):
+		# This is probably not the most efficient way of calculating the next_ack offset
+		# but for this size of window hopefully it'll be performant enough
+		for offset in range(self.WINDOW_SIZE):
+			if self._arr[(self.start + offset) % self.WINDOW_SIZE] is None:
+				return offset
+		return self.WINDOW_SIZE
+
+class ConnectionClosedException(Exception):
+	pass
