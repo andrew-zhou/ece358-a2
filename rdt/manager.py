@@ -40,7 +40,7 @@ class Manager(object):
 			t.daemon = True
 			t.start()
 
-	def _handle_datagram(addr, datagram):
+	def _handle_datagram(self, addr, datagram):
 		# Sanity checks
 		segment = None
 		try:
@@ -52,8 +52,8 @@ class Manager(object):
 			verify_checksum(datagram)
 			if addr[1] != segment.source or self.port != segment.dest:
 				raise Exception('Port does not match.')
-		except Exception:
-			print('Invalid segment received.', file=stderr)
+		except Exception as e:
+			raise Exception() from e
 		if not segment:
 			return
 

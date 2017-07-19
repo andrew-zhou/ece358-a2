@@ -5,7 +5,7 @@ from rdt.segment import Segment, SegmentFlags
 from enum import Enum
 from heapq import heappush, heappop
 from socket import socket, AF_INET, SOCK_DGRAM
-from threading import Lock
+from threading import Lock, Timer
 from time import sleep
 
 class Connection(object):
@@ -263,7 +263,7 @@ class ConnectionSendTimer(object):
 		self.is_running = False
 
 	def _run(self):
-		self.function()
+		self.func()
 		self.is_running = False
 		self.start()
 
