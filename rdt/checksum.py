@@ -3,11 +3,11 @@
 import sys
 
 def generate_checksum(bytes_):
-	# Take ones complement sum of all byte pairs
+    # Take ones complement sum of all byte pairs
     checksum = 0
     for pair in _all_byte_pairs(bytes_):
-    	val = int.from_bytes(pair, sys.byteorder)
-    	checksum = _bitwise_add(checksum, val)
+        val = int.from_bytes(pair, sys.byteorder)
+        checksum = _bitwise_add(checksum, val)
 
     # Take the ones complement of the sum
     checksum = checksum ^ 0xFFFF
@@ -31,14 +31,18 @@ def verify_checksum(bytes_):
 
 def _all_byte_pairs(bytes_):
 	# Helper to get all pairs of bytes
-	return [
-		bytes_[idx:idx+2]
-		if idx + 1 < len(bytes_)
-		else bytes_[idx].to_bytes(1, sys.byteorder) + b'\x00'  # This is a kinda hacky way to append \x00
-															   # to a last odd byte since accessing that byte
-															   # by itself returns an int which can't concatenate with a byte
-		for idx in range(0, len(bytes_), 2)
-	]
+        pairs = []
+        for idx in range(0, len(bytes_), 2):
+            if idx + 1 < len(bytes_):
+                pair = bytes_[idx:idx+2]
+            else:
+                # This is a kinda hacky way to append \x00 to a last odd byte since
+                # accessing that byte by itself returns an int which can't concatenate with a byte
+                pair = bytes_[idx].to_bytes(1, sys.byteorder) + b'\x00'
+            if sys.byteorder != 'big':  # Flip if not big endian order
+                pair = pair[1:] + pair[:1]
+                pairs.append(pair)
+        return pairs
 
 def _bitwise_add(a, b):
         # Bitwise ones-complementary addition helper
