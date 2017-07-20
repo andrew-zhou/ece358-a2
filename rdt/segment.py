@@ -23,7 +23,7 @@ class Segment(object):
             flags: (SegmentFlags) SYN/ACK/FIN flags
             payload: (bytes) Data to send (as bytes)
             size: (int|None) Optionally specify size in bytes, otherwise calculated
-            checksum: (int|None) Optionally specify checksum in big endian, otherwise calculated
+            checksum: (int|None) Optionally specify checksum, otherwise calculated
         """
         self.source = source
         self.dest = dest
@@ -36,38 +36,35 @@ class Segment(object):
         self.size = Segment.HEADER_SIZE + len(payload)
 
         # Set checksum
-        self.checksum = self._calculate_checksum()
+        if checksum is not None:
+            self.checksum = checksum
+        else:
+            self.checksum = self._calculate_checksum()
 
     def to_bytes(self):
         """Converts to a byte representation. As part of this conversion,
-        we transform all ints in the header into network endian order.
+        we transform all ints in the header into network endian order via.
+        the header format string.
         """
         return struct.pack(
             self.HEADER_FORMAT,
-            socket.htons(self.source),
-            socket.htons(self.dest),
-            socket.htonl(self.size),
-            socket.htonl(self.seq),
-            socket.htonl(self.ack),
+            self.source,
+            self.dest,
+            self.size,
+            self.seq,
+            self.ack,
             self.flags.to_byte(),
-            socket.htons(self.checksum)
+            self.checksum
         ) + self.payload
 
     @classmethod
     def from_bytes(cls, bytes_):
         """Converts to the class representation. As part of this conversion,
-        we transform all ints in the header into host endian order with the
-        exception of the checksum which we leave in network order.
+        we transform all ints in the header into host endian order via. the
+        header format string.
         """
         # Unpack the header
         source, dest, size, seq, ack, flag_byte, checksum = struct.unpack(cls.HEADER_FORMAT, bytes_[:cls.HEADER_SIZE])
-
-        # Convert to host endian
-        source = socket.ntohs(source)
-        dest = socket.ntohs(dest)
-        size = socket.ntohl(size)
-        seq = socket.ntohl(seq)
-        ack = socket.ntohl(ack)
 
         # Convert flags to object
         flags = SegmentFlags.from_byte(flag_byte)
@@ -76,17 +73,17 @@ class Segment(object):
         payload = bytes_[cls.HEADER_SIZE:size]
 
         # Wrap in object
-        segment = Segment(source, dest, seq, ack, flags, payload, size, checksum)
+        segment = Segment(source, dest, seq, ack, flags, payload, size=size, checksum=checksum)
         return segment
 
     def _calculate_checksum(self):
-        # Convert to bytes in system endian
+        # Convert to bytes in network order
         bytes_ = (
-            self.source.to_bytes(2, sys.byteorder) +
-            self.dest.to_bytes(2, sys.byteorder) +
-            self.size.to_bytes(4, sys.byteorder) +
-            self.seq.to_bytes(4, sys.byteorder) +
-            self.ack.to_bytes(4, sys.byteorder) +
+            self.source.to_bytes(2, 'big') +
+            self.dest.to_bytes(2, 'big') +
+            self.size.to_bytes(4, 'big') +
+            self.seq.to_bytes(4, 'big') +
+            self.ack.to_bytes(4, 'big') +
             self.flags.to_byte() +
             b'\x00\x00\x00' +
             self.payload
