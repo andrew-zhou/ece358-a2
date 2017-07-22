@@ -10,38 +10,38 @@ from util import *
 
 class FileServer:
     def __init__(self, ip, port, file_dir):
-	self.ip = ip
+        self.ip = ip
         self.port = port
-	self.file_dir = file_dir
-
-    def _send(conn, num_bytes, raw_bytes):
-	raw_num_bytes = num_bytes.to_bytes(4, byteorder=sys.byteorder)		
-	raw_all_bytes = raw_num_bytes + raw_bytes
-	conn.send(raw_all_bytes)
-
-    def _handle_
+        self.file_dir = file_dir
 
     def _handle_connection(self, conn):
-	client_ip, client_port = conn.peer()
-	eprint("Received connection with client at %s %s" % (client_ip, client_port))
-	file_name = "%s.%s.%s.%s" % (client_ip, client_port, self.ip, self.port)
-	try:
-	    try:
-	        with open(file_name, 'r') as fh:
-		    num_file_bytes, file_bytes = fh.tell(), fh.read()
-		    eprint("Sending file %s of size %d" % (num_file_bytes, file_name))
-		    self._send(num_file_bytes, file_bytes) 
-	    except FileNotFoundErrror:
-		self._send(0, b'')
+        client_ip, client_port = conn.peer()
+        eprint("Established connection with client at %s %s" % (client_ip, client_port))
+        file_name = "%s.%s.%s.%s" % (client_ip, client_port, self.ip, self.port)
+        try:
+            # Send client initial file contents
+            try:
+                with open(file_name, 'rb') as fh:
+                    file_bytes = fh.read()
+                    eprint("START: send file %s of size %d" % (file_name, len(file_bytes)))
+                    application_send(conn, file_bytes)
+            except FileNotFoundErrror:
+                eprint("START: send empty file")
+                application_send(conn, b'')
 
-      	    num_client_bytes = conn.recv(4)
-	    while True:
-		
-	    
-	except:
-	    eprint("Unexpected error: %s" % sys.exc_info()[0])	
-	    if conn.status() != ConnectionStatus.CLOSED:
-		conn.close()
+            # Append new contents to file
+            while True:
+                new_file_bytes = application_recv(conn)
+                eprint("Received new contents of size %d for file %s" % (len(file_bytes), file_name))
+                with open(file_name, 'a+b') as fh:
+                    fh.write(new_file_bytes)
+                application_send(conn, new_file_bytes)
+        except ConnectionClosedException:
+            eprint("Connection closed with client at %s %s" % (client_ip, client_port))
+        except:
+            eprint("Unexpected error: %s" % sys.exc_info()[0])  
+            if conn.status() != ConnectionStatus.CLOSED:
+                conn.close()
 
     def start(self):
         conn_queue = Queue()
@@ -50,12 +50,12 @@ class FileServer:
         t.daemon = True
         t.start()
         while True:
-	    conn = conn_queue.get()
-	    conn_t = Thread(target=self._handle_connection, args=(conn))
+            conn = conn_queue.get()
+            conn_t = Thread(target=self._handle_connection, args=(conn))
             conn_t.start()
 
 if __name__ == '__main__':
     port, file_dir = get_args(2)
-    ip = get_non_loopback_ip() 
-    server = FileServer(ip, port, file_dir)    
+    ip = get_non_loopback_ip()
+    server = FileServer(ip, port, file_dir)
     server.start()
