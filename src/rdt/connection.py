@@ -167,7 +167,6 @@ class Connection(object):
 
 
     # === Connection Establishment Methods - Do NOT Call in Application Layer ===
-    # TODO: All of these
 
     def _send_syn(self):
         if self.status() == ConnectionStatus.CLOSED:
