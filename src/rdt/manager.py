@@ -69,7 +69,7 @@ class Manager(object):
                         del self.connections[seg_key]
                     else:
                         return
-                new_conn = Connection(self.ip, self.port, addr[0], segment.source)
+                new_conn = Connection(self.ip, self.port, addr[0], segment.source, send_socket=self.socket)
                 new_conn._recv_syn(segment)
                 self.connections[seg_key] = new_conn
         elif segment.flags.syn and segment.flags.ack and not segment.flags.fin:

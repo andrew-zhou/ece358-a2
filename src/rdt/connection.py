@@ -13,7 +13,7 @@ class Connection(object):
     MAX_PAYLOAD_SIZE = 480
     MAX_SEQ = 2 ** 32
 
-    def __init__(self, my_ip, my_port, their_ip, their_port):
+    def __init__(self, my_ip, my_port, their_ip, their_port, send_socket=None):
         """Connection is the rdt equivalent of a TCP client socket. Use for
         sending/receiving data in a dedicated connection with a single peer.
 
@@ -29,7 +29,7 @@ class Connection(object):
         self.next_seq = 0  # Keep track of the next seq number to send
         self.ack = 0  # Keep track of the earliest received segment not sent to client
         self.next_ack = 0  # Keep track of the next expected seq number from peer
-        self.send_socket = socket(AF_INET, SOCK_DGRAM)
+        self.send_socket = send_socket or socket(AF_INET, SOCK_DGRAM)
 
     def peer(self):
         """Returns the (ip, port) of the other side of the connection."""
