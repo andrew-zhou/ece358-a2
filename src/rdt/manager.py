@@ -50,7 +50,7 @@ class Manager(object):
                 datagram = bytes(datagram)
             segment = Segment.from_bytes(datagram)
             verify_checksum(datagram)
-            if self.port != segment.dest:
+            if self.port != segment.dest or addr[1] != segment.source:
                 raise Exception('Port does not match.')
         except Exception as e:
             print('Invalid segment received.', file=stderr)
