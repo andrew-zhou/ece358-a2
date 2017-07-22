@@ -163,7 +163,7 @@ class Connection(object):
         offset = seq - self.ack if seq >= self.ack else (seq + self.MAX_SEQ - self.ack)
         with self.recv_buffer.lock:
             self.recv_buffer.buffer.put(segment.payload, offset)
-            self.next_ack = self.ack + self.recv_buffer.buffer.expected
+            self.next_ack = (self.ack + self.recv_buffer.buffer.expected) % self.MAX_SEQ
 
 
     # === Connection Establishment Methods - Do NOT Call in Application Layer ===
