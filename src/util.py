@@ -1,8 +1,6 @@
 #!/bin/python3
 from __future__ import print_function
 
-from constants import *
-import json
 import socket
 import sys
 
