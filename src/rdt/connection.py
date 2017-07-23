@@ -30,6 +30,7 @@ class Connection(object):
         self.ack = 0  # Keep track of the earliest received segment not sent to client
         self.next_ack = 0  # Keep track of the next expected seq number from peer
         self.send_socket = send_socket or socket(AF_INET, SOCK_DGRAM)
+        self.last_sent_is_ack_for_synack = False # HACK: gr8 b8 m8 i r8 8/8 no h8 apprec8 my name is n8
 
     def peer(self):
         """Returns the (ip, port) of the other side of the connection."""
@@ -97,6 +98,9 @@ class Connection(object):
         # Add to send_buffer
         block = ConnectionSentBlock(data, seq, flags)
         with self.send_buffer.lock:
+            if self.last_sent_is_ack_for_synack:
+                self.last_sent_is_ack_for_synack = False
+                heappop(self.send_buffer.buffer)
             heappush(self.send_buffer.buffer, (seq, block))
 
         # Start timer if not already started
@@ -193,7 +197,8 @@ class Connection(object):
             with self.send_buffer.lock:
                 self.send_buffer.buffer.clear()
             # Send ACK
-            self._send_new(b'', SegmentFlags(syn=False, ack=True, fin=False)) 
+            self._send_new(b'', SegmentFlags(syn=False, ack=True, fin=False))
+            self.last_sent_is_ack_for_synack = True
             self.tcb.status = ConnectionStatus.ESTAB
 
     def _establish(self, segment):
