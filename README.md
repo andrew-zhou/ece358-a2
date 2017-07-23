@@ -17,6 +17,7 @@ $ ./pa2-358s17 <port> <file_directory_path>
 ## Things to test
 - [ ] Reliable connection (Order is preserved)
 - [ ] Performance (>= 10Mbps)
+- [ ] Large file transfers
 - [ ] Multiple clients per server
 - [ ] Multiple servers running simultaneously
 - [ ] Initiate connection closure from server side
