@@ -46,6 +46,7 @@ class FileServer:
                 conn.close()
 
     def start(self):
+        eprint("Listening at %s %d" % (self.ip, self.port)) 
         conn_queue = Queue()
         m = Manager(self.ip, self.port, conn_queue)
         t = Thread(target=m.start)
