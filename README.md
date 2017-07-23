@@ -23,3 +23,6 @@ $ ./pa2-358s17 <port> <file_directory_path>
 - [ ] Invalid segment checksums
 - [ ] Dropped segments from server to client
 - [ ] SYN/Data segment after connection closure
+- [ ] Server lacks permission to edit file
+- [ ] Super large payloads requiring wrap around
+- [ ] Server and Client sending/recieving to eachother at the same time
