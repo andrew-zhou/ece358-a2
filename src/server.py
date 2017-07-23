@@ -40,12 +40,16 @@ class FileServer:
                 application_send(conn, new_file_bytes)
         except ConnectionClosedException:
             eprint("Connection closed with client at %s %s" % (client_ip, client_port))
+        except PermissionError as pe:
+            eprint("Error with permissions on file %s. Raw error %s" % (file_path, pe))
+            conn.close()
         except:
-            eprint("Unexpected error: %s" % sys.exc_info()[0])  
+            eprint("Unexpected error: %s" % sys.exc_info()[0])
             if conn.status() != ConnectionStatus.CLOSED:
                 conn.close()
 
     def start(self):
+        eprint("Listening at %s %d" % (self.ip, self.port))
         conn_queue = Queue()
         m = Manager(self.ip, self.port, conn_queue)
         t = Thread(target=m.start)
@@ -54,6 +58,7 @@ class FileServer:
         while True:
             conn = conn_queue.get()
             conn_t = Thread(target=self._handle_connection, args=(conn,))
+            conn_t.daemon = True
             conn_t.start()
 
 if __name__ == '__main__':
