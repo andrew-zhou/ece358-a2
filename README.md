@@ -17,12 +17,12 @@ $ ./pa2-358s17 <port> <file_directory_path>
 ## Things to test
 - [ ] Reliable connection (Order is preserved)
 - [ ] Performance (>= 10Mbps)
-- [ ] Multiple clients per server
-- [ ] Multiple servers running simultaneously
-- [ ] Initiate connection closure from server side
+- [x] Multiple clients per server
+- [x] Multiple servers running simultaneously
+- [x] Initiate connection closure from server side
 - [ ] Invalid segment checksums
 - [ ] Dropped segments from server to client
 - [ ] SYN/Data segment after connection closure
-- [ ] Server lacks permission to edit file
+- [x] Server lacks permission to edit file
 - [ ] Super large payloads requiring wrap around
 - [ ] Server and Client sending/recieving to eachother at the same time
