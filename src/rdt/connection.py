@@ -9,8 +9,8 @@ from threading import Lock, Timer
 from time import sleep
 
 class Connection(object):
-    TIMEOUT_INTERVAL = 10
-    MAX_PAYLOAD_SIZE = 480
+    TIMEOUT_INTERVAL = 2
+    MAX_PAYLOAD_SIZE = 1200
     MAX_SEQ = 2 ** 32
 
     def __init__(self, my_ip, my_port, their_ip, their_port, send_socket=None):
@@ -116,15 +116,20 @@ class Connection(object):
         # Send via. UDP
         self.send_socket.sendto(segment.to_bytes(), self.peer())
 
-    def _timeout(self):
-        # Get data/seq/flags for segment corresponding to self.seq
-        block = None
-        with self.send_buffer.lock:
-            block = self.send_buffer.buffer[0][1] if self.send_buffer.buffer else None
+    # def _timeout(self):
+    #     # Get data/seq/flags for segment corresponding to self.seq
+    #     block = None
+    #     with self.send_buffer.lock:
+    #         block = self.send_buffer.buffer[0][1] if self.send_buffer.buffer else None
 
-        # Re-send segment
-        if block:
-            self._send(block.data, block.flags, block.seq)
+    #     # Re-send segment
+    #     if block:
+    #         self._send(block.data, block.flags, block.seq)
+
+    def _timeout(self):
+        with self.send_buffer.lock:
+            for _, block in self.send_buffer.buffer:
+                self._send(block.data, block.flags, block.seq)
 
     def _receive_segment(self, segment):
         """This is called by the connection manager to put segments received
