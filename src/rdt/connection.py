@@ -9,7 +9,7 @@ from threading import Lock, Timer
 from time import sleep
 
 class Connection(object):
-    TIMEOUT_INTERVAL = 10
+    TIMEOUT_INTERVAL = 2
     MAX_PAYLOAD_SIZE = 480
     MAX_SEQ = 2 ** 32
 
@@ -114,7 +114,10 @@ class Connection(object):
         segment = Segment(source, dest, seq, ack, flags, data)
 
         # Send via. UDP
-        self.send_socket.sendto(segment.to_bytes(), self.peer())
+        import random
+        drop = random.randint(0, 1) == 1
+        if not drop:
+            self.send_socket.sendto(segment.to_bytes(), self.peer())
 
     def _timeout(self):
         # Get data/seq/flags for segment corresponding to self.seq
