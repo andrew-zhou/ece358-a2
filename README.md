@@ -15,7 +15,7 @@ $ ./pa2-358s17 <port> <file_directory_path>
 ```
 
 ## Things to test
-- [ ] Reliable connection (Order is preserved)
+- [x] Reliable connection (Order is preserved)
 - [ ] Performance (>= 10Mbps)
 - [x] Multiple clients per server
 - [x] Multiple servers running simultaneously
