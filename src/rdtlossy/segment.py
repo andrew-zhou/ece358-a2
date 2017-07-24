@@ -1,6 +1,6 @@
 #!/bin/python3
 
-from rdt.checksum import generate_checksum
+from rdtlossy.checksum import generate_checksum
 
 import socket
 import struct

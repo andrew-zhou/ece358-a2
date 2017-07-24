@@ -1,8 +1,8 @@
 #!/bin/python3
 
-from rdt.checksum import verify_checksum
-from rdt.connection import Connection, ConnectionStatus
-from rdt.segment import Segment
+from rdtlossy.checksum import verify_checksum
+from rdtlossy.connection import Connection, ConnectionStatus
+from rdtlossy.segment import Segment
 
 from socket import socket, AF_INET, SOCK_DGRAM
 from sys import stderr
