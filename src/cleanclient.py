@@ -5,9 +5,9 @@ from datetime import datetime
 
 from queue import Queue
 from threading import Thread
-from rdt.manager import Manager
-from rdt.connection import Connection
-from rdt.connection import ConnectionClosedException, ConnectionStatus
+from rdtlossy.manager import Manager
+from rdtlossy.connection import Connection
+from rdtlossy.connection import ConnectionClosedException, ConnectionStatus
 
 from util import *
 
