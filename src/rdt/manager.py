@@ -2,7 +2,7 @@
 
 from rdt.checksum import verify_checksum
 from rdt.connection import Connection, ConnectionStatus
-from rdt.segment import Segment
+from rdt.segment import Segment, SegmentFlags
 
 from socket import socket, AF_INET, SOCK_DGRAM
 from sys import stderr
@@ -43,21 +43,30 @@ class Manager(object):
     def _handle_datagram(self, addr, datagram):
         # Sanity checks
         segment = None
+        is_syn = False
+        seg_key = None
         try:
             if isinstance(datagram, str):
                 datagram = datagram.encode()
             elif not isinstance(datagram, bytes):
                 datagram = bytes(datagram)
             segment = Segment.from_bytes(datagram)
+            is_syn = segment.flags.syn
+            seg_key = (addr[0], segment.source)
             verify_checksum(datagram)
             if self.port != segment.dest or addr[1] != segment.source:
                 raise Exception('Port does not match.')
         except Exception as e:
             print('Invalid segment received.', file=stderr)
+            if not is_syn and seg_key:
+                # Send back an ACK
+                with self.connections_lock:
+                    conn = self.connections.get(seg_key)
+                    if conn:
+                        conn._send(b'', SegmentFlags(ack=True), conn.next_seq)
+
         if not segment:
             return
-
-        seg_key = (addr[0], segment.source)
 
         # Check if segment is attempting to SYN
         if segment.flags.syn and not segment.flags.ack and not segment.flags.fin:

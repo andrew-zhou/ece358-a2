@@ -30,7 +30,6 @@ class Connection(object):
         self.ack = 0  # Keep track of the earliest received segment not sent to client
         self.next_ack = 0  # Keep track of the next expected seq number from peer
         self.send_socket = send_socket or socket(AF_INET, SOCK_DGRAM)
-        self.last_sent_is_ack_for_synack = False # HACK: gr8 b8 m8 i r8 8/8 no h8 apprec8 my name is n8
 
     def peer(self):
         """Returns the (ip, port) of the other side of the connection."""
@@ -98,9 +97,6 @@ class Connection(object):
         # Add to send_buffer
         block = ConnectionSentBlock(data, seq, flags)
         with self.send_buffer.lock:
-            if self.last_sent_is_ack_for_synack:
-                self.last_sent_is_ack_for_synack = False
-                heappop(self.send_buffer.buffer)
             heappush(self.send_buffer.buffer, (seq, block))
 
         # Start timer if not already started
@@ -170,10 +166,14 @@ class Connection(object):
         # Store payload in recv buffer
         seq = segment.seq
         offset = seq - self.ack if seq >= self.ack else (seq + self.MAX_SEQ - self.ack)
-        with self.recv_buffer.lock:
-            self.recv_buffer.buffer.put(segment.payload, offset)
-            self.next_ack = (self.ack + self.recv_buffer.buffer.expected) % self.MAX_SEQ
+        if len(segment.payload) > 0:
+            with self.recv_buffer.lock:
+                self.recv_buffer.buffer.put(segment.payload, offset)
+                self.next_ack = (self.ack + self.recv_buffer.buffer.expected) % self.MAX_SEQ
 
+        if not segment.flags.ack or len(segment.payload) > 0:
+            # Send back an ACK
+            self._send(b'', SegmentFlags(ack=True), self.next_seq)
 
     # === Connection Establishment Methods - Do NOT Call in Application Layer ===
 
@@ -201,10 +201,10 @@ class Connection(object):
             self.next_seq = segment.ack
             with self.send_buffer.lock:
                 self.send_buffer.buffer.clear()
-            # Send ACK
-            self._send_new(b'', SegmentFlags(syn=False, ack=True, fin=False))
-            self.last_sent_is_ack_for_synack = True
             self.tcb.status = ConnectionStatus.ESTAB
+        if self.status() == ConnectionStatus.ESTAB:
+            # Send ACK
+            self._send(b'', SegmentFlags(syn=False, ack=True, fin=False), self.next_seq)
 
     def _establish(self, segment):
         if self.tcb.status == ConnectionStatus.SYN_RECD:
