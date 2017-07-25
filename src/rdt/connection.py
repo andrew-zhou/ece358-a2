@@ -307,11 +307,14 @@ class ConnectionReceiveWindow(object):
         if not trimmed_data:
             return
 
+        eprint('ConnectionReceiveWindow.put(), start: {}, offset: {}, trim_data_len: {}'.format(self.start, offset, len(trimmed_data)))	
+
         ini = self.start + offset
         if ini < self.WINDOW_SIZE:
             forward_length = min(len(trimmed_data), self.WINDOW_SIZE - ini)
             self._arr[ini:ini+forward_length] = trimmed_data[:forward_length]
             wrap_length = len(trimmed_data) - forward_length
+            eprint('Forward length: {}, wrap length: {}'.format(forward_length, wrap_length))
             if wrap_length > 0:
                 self._arr[:wrap_length] = trimmed_data[forward_length:]
         else:
