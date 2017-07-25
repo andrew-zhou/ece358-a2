@@ -351,6 +351,7 @@ class ConnectionReceiveWindow(object):
         for i in range(self.WINDOW_SIZE):
             if self._arr[(self.start + offset + i) % self.WINDOW_SIZE] is None:
                 return offset + i
+        eprint('What is self.WINDOW_SIZE? It is {}'.format(self.WINDOW_SIZE))
         return self.WINDOW_SIZE
 
 class ConnectionClosedException(Exception):
