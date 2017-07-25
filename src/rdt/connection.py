@@ -73,7 +73,7 @@ class Connection(object):
                     eprint('Buffer is expected to have: {} bytes'.format(self.recv_buffer.buffer.expected))
                     data = self.recv_buffer.buffer.get(max_size)
                     break
-            sleep(1)
+            sleep(0.1)
 
         eprint('Received {} bytes of data to application'.format(len(data)))
         # Shift the base ack
@@ -175,7 +175,6 @@ class Connection(object):
             with self.recv_buffer.lock:
                 self.recv_buffer.buffer.put(segment.payload, offset)
                 self.next_ack = (self.ack + self.recv_buffer.buffer.expected) % self.MAX_SEQ
-        eprint('Store {} bytes of data starting at offset {}, ack is {}'.format(len(segment.payload), offset, self.next_ack))
 
         if not segment.flags.ack or len(segment.payload) > 0:
             # Send back an ACK
@@ -318,9 +317,8 @@ class ConnectionReceiveWindow(object):
             ini -= self.WINDOW_SIZE
             self._arr[ini:ini + len(trimmed_data)] = trimmed_data
 
-        if self.expected >= offset:
-            self.expected = max(self.expected, offset + len(trimmed_data))
-
+        self.expected = self._calculate_expected(offset + len(trimmed_data))
+        eprint('Stored {} bytes of data into recv buffer; expected (offset from start) is now: {}'.format(len(trimmed_data), self.expected))
 
     def get(self, max_size):
         size = min(max_size, self.expected)
@@ -329,7 +327,6 @@ class ConnectionReceiveWindow(object):
         data = []
         if size > self.WINDOW_SIZE - self.start:
             # Need to wrap around
-            print('wrapping')
             data = self._arr[self.start:]
             self._arr[self.start:] = [None] * (self.WINDOW_SIZE - self.start)
             size -= self.WINDOW_SIZE - self.start
@@ -343,12 +340,12 @@ class ConnectionReceiveWindow(object):
     def ready(self):
         return self.expected > 0
 
-    def _calculate_expected(self):
+    def _calculate_expected(self, offset):
         # This is probably not the most efficient way of calculating the next_ack offset
         # but for this size of window hopefully it'll be performant enough
-        for offset in range(self.WINDOW_SIZE):
-            if self._arr[(self.start + offset) % self.WINDOW_SIZE] is None:
-                return offset
+        for i in range(self.WINDOW_SIZE):
+            if self._arr[(self.start + offset + i) % self.WINDOW_SIZE] is None:
+                return offset + i
         return self.WINDOW_SIZE
 
 class ConnectionClosedException(Exception):
