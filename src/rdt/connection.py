@@ -73,7 +73,7 @@ class Connection(object):
                     eprint('Buffer is expected to have: {} bytes'.format(self.recv_buffer.buffer.expected))
                     data = self.recv_buffer.buffer.get(max_size)
                     break
-            sleep(0.1)
+            sleep(2)
 
         eprint('Received {} bytes of data to application'.format(len(data)))
         # Shift the base ack
