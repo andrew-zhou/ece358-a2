@@ -321,6 +321,12 @@ class ConnectionReceiveWindow(object):
             ini -= self.WINDOW_SIZE
             self._arr[ini:ini + len(trimmed_data)] = trimmed_data
 
+        if len(trimmed_data) < Connection.MAX_PAYLOAD_SIZE:
+            print('How big is my array? {}'.format(len(self._arr)))
+            for b in range(len(self._arr)):
+                if self._arr[b] is None:
+                    print('Holy shit we have a problem: {}'.format(b))
+
         self.expected = self._calculate_expected(offset + len(trimmed_data))
         eprint('Stored {} bytes of data into recv buffer; expected (offset from start) is now: {}'.format(len(trimmed_data), self.expected))
 
