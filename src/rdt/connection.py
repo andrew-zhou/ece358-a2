@@ -300,17 +300,20 @@ class ConnectionReceiveWindow(object):
         trimmed_data = data[:max(self.WINDOW_SIZE - offset, 0)]
         if not trimmed_data:
             return
+
         ini = self.start + offset
         if ini < self.WINDOW_SIZE:
             forward_length = min(len(trimmed_data), self.WINDOW_SIZE - ini)
             self._arr[ini:ini+forward_length] = trimmed_data[:forward_length]
             wrap_length = len(trimmed_data) - forward_length
-            if wrap_length:
+            if wrap_length > 0:
                 self._arr[:wrap_length] = trimmed_data[forward_length:]
         else:
             ini -= self.WINDOW_SIZE
             self._arr[ini:ini + len(trimmed_data)] = trimmed_data
-        self.expected = self._calculate_expected()
+
+        if self.expected >= offset:
+            self.expected = max(self.expected, offset + len(trimmed_data))
 
     def get(self, max_size):
         size = min(max_size, self.expected)

@@ -25,16 +25,16 @@ class FileServer:
             try:
                 with open(file_path, 'rb') as fh:
                     file_bytes = fh.read()
-                    eprint("START: send file %s of size %d" % (file_path, len(file_bytes)))
+                    # eprint("START: send file %s of size %d" % (file_path, len(file_bytes)))
                     application_send(conn, file_bytes)
             except FileNotFoundError:
-                eprint("START: send empty file")
+                # eprint("START: send empty file")
                 application_send(conn, b'')
 
             # Append new contents to file
             while True:
                 new_file_bytes = application_recv(conn)
-                eprint("Received new contents of size %d for file %s" % (len(new_file_bytes), file_path))
+                # eprint("Received new contents of size %d for file %s" % (len(new_file_bytes), file_path))
                 with open(file_path, 'a+b') as fh:
                     fh.write(new_file_bytes)
                 application_send(conn, new_file_bytes)
