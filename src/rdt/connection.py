@@ -173,6 +173,7 @@ class Connection(object):
         offset = seq - self.ack if seq >= self.ack else (seq + self.MAX_SEQ - self.ack)
         if len(segment.payload) > 0:
             with self.recv_buffer.lock:
+                eprint('Segment seq: {}'.format(seq))
                 self.recv_buffer.buffer.put(segment.payload, offset)
                 self.next_ack = (self.ack + self.recv_buffer.buffer.expected) % self.MAX_SEQ
 
@@ -325,13 +326,17 @@ class ConnectionReceiveWindow(object):
         if size <= 0:
             return None
         data = []
-        if size > self.WINDOW_SIZE - self.start:
+        eprint('ConnectionReceiveWindow.get() size: {}'.format(size))
+        if size > (self.WINDOW_SIZE - self.start):
             # Need to wrap around
+            eprint('ConnectionReceiveWindow.get() wrap around')
             data = self._arr[self.start:]
             self._arr[self.start:] = [None] * (self.WINDOW_SIZE - self.start)
             size -= self.WINDOW_SIZE - self.start
             self.start = 0
+        eprint('ConnectionReceiveWindow.get() data post wrap: {}'.format(len(data)))
         data += self._arr[self.start:self.start + size]
+        eprint('ConnectionReceiveWindow.get() data post add: {}'.format(len(data)))
         self._arr[self.start:self.start + size] = [None] * size
         self.start += size
         self.expected -= size
