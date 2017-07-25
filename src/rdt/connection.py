@@ -8,6 +8,8 @@ from socket import socket, AF_INET, SOCK_DGRAM
 from threading import Lock, Timer
 from time import sleep
 
+from util import *
+
 class Connection(object):
     TIMEOUT_INTERVAL = 2
     MAX_PAYLOAD_SIZE = 1200
@@ -68,10 +70,12 @@ class Connection(object):
                 raise ConnectionClosedException()
             with self.recv_buffer.lock:
                 if self.recv_buffer.buffer.ready():
+                    eprint('Buffer is expected to have: {} bytes'.format(self.recv_buffer.buffer.expected))
                     data = self.recv_buffer.buffer.get(max_size)
                     break
             sleep(1)
 
+        eprint('Received {} bytes of data to application'.format(len(data)))
         # Shift the base ack
         self.ack = (self.ack + len(data)) % self.MAX_SEQ
         return data
@@ -126,6 +130,7 @@ class Connection(object):
         with self.send_buffer.lock:
             for _, block in self.send_buffer.buffer:
                 self._send(block.data, block.flags, block.seq)
+        eprint('Timed out')
 
     def _receive_segment(self, segment):
         """This is called by the connection manager to put segments received
@@ -170,6 +175,7 @@ class Connection(object):
             with self.recv_buffer.lock:
                 self.recv_buffer.buffer.put(segment.payload, offset)
                 self.next_ack = (self.ack + self.recv_buffer.buffer.expected) % self.MAX_SEQ
+        eprint('Store {} bytes of data starting at offset {}, ack is {}'.format(len(segment.payload), offset, self.next_ack))
 
         if not segment.flags.ack or len(segment.payload) > 0:
             # Send back an ACK
@@ -315,6 +321,7 @@ class ConnectionReceiveWindow(object):
         if self.expected >= offset:
             self.expected = max(self.expected, offset + len(trimmed_data))
 
+
     def get(self, max_size):
         size = min(max_size, self.expected)
         if size <= 0:
@@ -322,6 +329,7 @@ class ConnectionReceiveWindow(object):
         data = []
         if size > self.WINDOW_SIZE - self.start:
             # Need to wrap around
+            print('wrapping')
             data = self._arr[self.start:]
             self._arr[self.start:] = [None] * (self.WINDOW_SIZE - self.start)
             size -= self.WINDOW_SIZE - self.start
