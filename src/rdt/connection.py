@@ -71,12 +71,12 @@ class Connection(object):
                 raise ConnectionClosedException()
             with self.recv_buffer.lock:
                 if self.recv_buffer.buffer.ready():
-                    #eprint('Buffer is expected to have: {} bytes'.format(self.recv_buffer.buffer.expected))
+                    eprint('Buffer is expected to have: {} bytes'.format(self.recv_buffer.buffer.expected))
                     data = self.recv_buffer.buffer.get(max_size)
                     break
             sleep(0.1)
 
-        #eprint('Received {} bytes of data to application'.format(len(data)))
+        eprint('Received {} bytes of data to application'.format(len(data)))
         # Shift the base ack
         self.ack = (self.ack + len(data)) % self.MAX_SEQ
         return data
@@ -94,7 +94,7 @@ class Connection(object):
     def _send_new(self, data, flags):
         # Send segment
         seq = self.next_seq
-        # eprint('Sending segment for first time with seq: {}'.format(seq))
+        eprint('Sending segment for first time with seq: {}'.format(seq))
         self._send(data, flags, seq)
 
         # Update next_seq
@@ -121,7 +121,7 @@ class Connection(object):
     def _timeout(self):
         with self.send_buffer.lock:
             for _, block in self.send_buffer.buffer:
-                # eprint('Timeout: sending seq {}'.format(block.seq))
+                eprint('Timeout: sending seq {}'.format(block.seq))
                 self._send(block.data, block.flags, block.seq)
         #eprint('Timed out')
 
@@ -151,14 +151,14 @@ class Connection(object):
                 self.seq = (self.seq + bytes_to_ack) % self.MAX_SEQ
                 while bytes_to_ack > 0 and self.send_buffer.buffer:
                     seq, block = self.send_buffer.buffer.popleft()
-                    # eprint('ACKING block with sequence: {}'.format(seq))
+                    eprint('ACKING block with sequence: {}'.format(seq))
                     if len(block.data) > bytes_to_ack:
                         # Do a partial ACK
                         new_data = block.data[bytes_to_ack:]
                         new_seq = (seq + bytes_to_ack) % self.MAX_SEQ
                         new_block = ConnectionSentBlock(new_data, new_seq, block.flags)
                         self.send_buffer.buffer.appendleft((new_seq, new_block))
-                        # eprint('PARTIAL REPUT ACK FOR: {}'.format(new_seq))
+                        eprint('PARTIAL REPUT ACK FOR: {}'.format(new_seq))
                     bytes_to_ack -= len(block.data)
                 # if not self.send_buffer.buffer:
                 #     self.timer.stop()
@@ -168,10 +168,10 @@ class Connection(object):
         offset = seq - self.ack if seq >= self.ack else (seq + self.MAX_SEQ - self.ack)
         if len(segment.payload) > 0:
             with self.recv_buffer.lock:
-                #eprint('Segment seq: {}'.format(seq))
+                # eprint('Segment seq: {}'.format(seq))
                 self.recv_buffer.buffer.put(segment.payload, offset)
                 self.next_ack = (self.ack + self.recv_buffer.buffer.expected) % self.MAX_SEQ
-                # eprint('My desired ack is: {}'.format(self.next_ack))
+                eprint('My desired ack is: {}'.format(self.next_ack))
 
         if not segment.flags.ack or len(segment.payload) > 0:
             # Send back an ACK
