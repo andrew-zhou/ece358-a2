@@ -15,6 +15,7 @@ class NiceClient(object):
     def __init__(self, ip, port):
         self.ip = ip
         self.port = port
+        self.FILE_NAME = '../assets/foo.jpg'
 
     def start(self):
         conn_queue = Queue()
@@ -109,6 +110,41 @@ class NiceClient(object):
                 data = application_recv(connections[(server_ip, server_port)])
                 end = datetime.now()
                 print (end - start)
+
+            elif cmd[0] == 'spam':
+                if cmd[1] == 'last':
+                    server_ip, server_port = last
+                else:
+                    server_ip = cmd[1]
+                    server_port = int(cmd[2])
+                    last = (server_ip, server_port)
+
+                file = open(self.FILE_NAME, 'rb')
+                file_data = file.read()
+
+                start = datetime.now()
+                application_send(connections[(server_ip, server_port)], file_data)
+                data = application_recv(connections[(server_ip, server_port)])
+                end = datetime.now()
+                time_taken = end - start
+                avg_t = time_taken
+                max_t = time_taken
+                min_t = time_taken
+                
+
+                for trial in range(1, 100):
+                    start = datetime.now()
+                    application_send(connections[(server_ip, server_port)], file_data)
+                    data = application_recv(connections[(server_ip, server_port)])
+                    end = datetime.now()
+                    time_taken = end - start
+
+                    max_t = max(time_taken, max_t)
+                    min_t = min(time_taken, min_t)
+                    avg_t = (trial*avg_t + time_taken)/(trial+1)
+
+                print('avg: {}, min: {}, max: {}'.format(avg_t, min_t, max_t))
+
 
             else:
                 print('Sorry no comprende')
