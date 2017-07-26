@@ -362,7 +362,7 @@ class ConnectionReceiveWindow(object):
         #         return i
         # return self.WINDOW_SIZE
         removed = self.itree.remove_if_exists(self.expected)
-        self.expected = removed + 1 if removed is not None else self.expected
+        return removed + 1 if removed is not None else self.expected
 
 class ConnectionClosedException(Exception):
     pass
