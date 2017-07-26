@@ -1,5 +1,6 @@
 #!/bin/python3
 
+from rdt.itree import Interval, IntervalList
 from rdt.segment import Segment, SegmentFlags
 
 from collections import deque
@@ -295,11 +296,12 @@ class ConnectionBuffer(object):
 
 class ConnectionReceiveWindow(object):
     """Circular buffer. Keeps track of base and next ack."""
-    WINDOW_SIZE = 2 ** 24
+    WINDOW_SIZE = 2 ** 16
     def __init__(self):
         self._arr = [None] * self.WINDOW_SIZE
         self.start = 0  # Index of start of circular buffer
         self.expected = 0  # How many bytes of data we have stored in buffer
+        self.itree = IntervalList()
 
     def put(self, data, offset):
         trimmed_data = data[:max(self.WINDOW_SIZE - offset, 0)]
@@ -315,6 +317,8 @@ class ConnectionReceiveWindow(object):
         else:
             ini -= self.WINDOW_SIZE
             self._arr[ini:ini + len(trimmed_data)] = trimmed_data
+
+        self.itree.insert(offset, offset + len(trimmed_data) - 1)
         self.expected = self._calculate_expected()
 
     def get(self, max_size):
@@ -335,12 +339,14 @@ class ConnectionReceiveWindow(object):
             self._arr[:size] = [None] * size
             # Set start and expected
             self.start = (self.start + total_size) % self.WINDOW_SIZE
+            self.itree.subtract(total_size)
             self.expected -= total_size
         else:
             # No wrap around
             data = self._arr[self.start:self.start + size]
             self._arr[self.start:self.start + size] = [None] * size
             self.start = (self.start + size) % self.WINDOW_SIZE
+            self.itree.subtract(size)
             self.expected -= size
         # eprint('post: start: {}, expected: {}'.format(self.start, self.expected))
         return bytes(data)
@@ -349,12 +355,14 @@ class ConnectionReceiveWindow(object):
         return self.expected > 0
 
     def _calculate_expected(self):
-        # This is probably not the most efficient way of calculating the next_ack offset
-        # but for this size of window hopefully it'll be performant enough
-        for i in range(self.WINDOW_SIZE):
-            if self._arr[(self.start + i) % self.WINDOW_SIZE] is None:
-                return i
-        return self.WINDOW_SIZE
+        # # This is probably not the most efficient way of calculating the next_ack offset
+        # # but for this size of window hopefully it'll be performant enough
+        # for i in range(self.WINDOW_SIZE):
+        #     if self._arr[(self.start + i) % self.WINDOW_SIZE] is None:
+        #         return i
+        # return self.WINDOW_SIZE
+        removed = self.itree.remove_if_exists(self.expected)
+        self.expected = removed + 1 if removed is not None else self.expected
 
 class ConnectionClosedException(Exception):
     pass
