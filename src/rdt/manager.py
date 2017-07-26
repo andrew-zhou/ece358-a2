@@ -10,6 +10,7 @@ from sys import stderr
 from threading import Thread, Lock
 
 class Manager(object):
+    NUM_THREADS = 20
     def __init__(self, ip, port, conn_queue):
         """Manager acts as a bridge between the high-level RDT Connections and
         low-level UDP socket. It binds a UDP socket to a given IP/Port,
@@ -34,16 +35,20 @@ class Manager(object):
 
     def start(self):
         self.socket.bind((self.ip, self.port))
-        t = Thread(target=self._handle_all)
-        t.daemon = True
-        t.start()
+        threads = []
+        for _ in range(self.NUM_THREADS):
+            t = Thread(target=self._handle_thread)
+            t.daemon = True
+            threads.append(t)
+        for t in threads:
+            t.start()
 
         # Main socket loop
         while True:
             datagram, addr = self.socket.recvfrom(4096)
             self.datagrams.put((addr, datagram))
 
-    def _handle_all(self):
+    def _handle_thread(self):
         while True:
             addr, datagram = self.datagrams.get()
             self._handle_datagram(addr, datagram)
