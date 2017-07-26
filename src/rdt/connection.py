@@ -12,7 +12,7 @@ from util import *
 
 class Connection(object):
     TIMEOUT_INTERVAL = 2
-    MAX_PAYLOAD_SIZE = 1200
+    MAX_PAYLOAD_SIZE = 800
     MAX_SEQ = 2 ** 32
 
     def __init__(self, my_ip, my_port, their_ip, their_port, send_socket=None):
@@ -93,6 +93,7 @@ class Connection(object):
     def _send_new(self, data, flags):
         # Send segment
         seq = self.next_seq
+        # eprint('Sending segment for first time with seq: {}'.format(seq))
         self._send(data, flags, seq)
 
         # Update next_seq
@@ -119,6 +120,7 @@ class Connection(object):
     def _timeout(self):
         with self.send_buffer.lock:
             for _, block in self.send_buffer.buffer:
+                # eprint('Timeout: sending seq {}'.format(block.seq))
                 self._send(block.data, block.flags, block.seq)
         #eprint('Timed out')
 
@@ -148,24 +150,27 @@ class Connection(object):
                 self.seq = (self.seq + bytes_to_ack) % self.MAX_SEQ
                 while bytes_to_ack > 0 and self.send_buffer.buffer:
                     seq, block = self.send_buffer.buffer.popleft()
+                    # eprint('ACKING block with sequence: {}'.format(seq))
                     if len(block.data) > bytes_to_ack:
                         # Do a partial ACK
                         new_data = block.data[bytes_to_ack:]
                         new_seq = (seq + bytes_to_ack) % self.MAX_SEQ
                         new_block = ConnectionSentBlock(new_data, new_seq, block.flags)
                         self.send_buffer.buffer.appendleft((new_seq, new_block))
+                        # eprint('PARTIAL REPUT ACK FOR: {}'.format(new_seq))
                     bytes_to_ack -= len(block.data)
                 if not self.send_buffer.buffer:
                     self.timer.stop()
 
         # Store payload in recv buffer
         seq = segment.seq
-        offset = seq - self.ack if seq >= self.ack else (seq + self.MAX_SEQ - self.ack)
+        offset = seq - self.next_ack if seq >= self.ack else (seq + self.MAX_SEQ - self.next_ack)
         if len(segment.payload) > 0:
             with self.recv_buffer.lock:
                 #eprint('Segment seq: {}'.format(seq))
                 self.recv_buffer.buffer.put(segment.payload, offset)
                 self.next_ack = (self.ack + self.recv_buffer.buffer.expected) % self.MAX_SEQ
+                # eprint('My desired ack is: {}'.format(self.next_ack))
 
         if not segment.flags.ack or len(segment.payload) > 0:
             # Send back an ACK
@@ -270,6 +275,7 @@ class ConnectionSendTimer(object):
         self.is_running = False
 
     def _run(self):
+        # eprint('=== Calling timer func ===')
         self.func()
         self.is_running = False
         self.start()
@@ -286,65 +292,67 @@ class ConnectionBuffer(object):
 
 class ConnectionReceiveWindow(object):
     """Circular buffer. Keeps track of base and next ack."""
-    WINDOW_SIZE = 2 ** 20
+    WINDOW_SIZE = 2 ** 24
     def __init__(self):
         self._arr = [None] * self.WINDOW_SIZE
         self.start = 0  # Index of start of circular buffer
-        self.expected = 0  # Offset from start to next expected byte (exclusive)
+        self.expected = 0  # How many bytes of data we have stored in buffer
 
     def put(self, data, offset):
-        trimmed_data = data[:max(self.WINDOW_SIZE - offset, 0)]
-        if not trimmed_data:
-            return
+        """"Offset is offset from expected to start of data. 0 means it is at the same spot as offset"""
+        # needs to account for the fact that offset could bring it to before start
+        trimmed_data = data[:max(0, self.WINDOW_SIZE - (self.expected + offset))]
+        d_start_os = self.expected + offset # offset from start of new data
+        d_end_os = d_start_os + len(trimmed_data)
 
-        #eprint('ConnectionReceiveWindow.put(), start: {}, offset: {}, trim_data_len: {}'.format(self.start, offset, len(trimmed_data)))	
+        # TODO INSERT THIS RANGE INTO INTERVAL TREE
 
-        ini = self.start + offset
-        if ini < self.WINDOW_SIZE:
-            forward_length = min(len(trimmed_data), self.WINDOW_SIZE - ini)
-            self._arr[ini:ini+forward_length] = trimmed_data[:forward_length]
-            wrap_length = len(trimmed_data) - forward_length
-            #eprint('Forward length: {}, wrap length: {}'.format(forward_length, wrap_length))
-            if wrap_length > 0:
-                self._arr[:wrap_length] = trimmed_data[forward_length:]
-        else:
-            ini -= self.WINDOW_SIZE
-            self._arr[ini:ini + len(trimmed_data)] = trimmed_data
+        d_start = self.start + d_start_os # Actual addresses of the data, ignoring wrap
+        d_end = self.start + d_end_os
 
-        self.expected = self._calculate_expected(offset + len(trimmed_data))
-        #eprint('Stored {} bytes of data into recv buffer; expected (offset from start) is now: {}'.format(len(trimmed_data), self.expected))
+        forward_offset = self.WINDOW_SIZE - d_start # the amount of data left after start, if negative wraps further
+        if forward_offset >= len(trimmed_data): # does not have to wrap
+            self._arr[d_start:d_end] = trimmed_data
+        elif forward_offset < 0: # start has to wrap
+            self._arr[d_start - self.WINDOW_SIZE:d_end - self.WINDOW_SIZE] = trimmed_data
+        else: # has to be split and wrap
+            self._arr[d_start:self.WINDOW_SIZE]
+            self._arr[:d_end - self.WINDOW_SIZE]
+
+        # CHECK INTERVAL TREE with self.expected, update it if possible
+        if d_start_os <= self.expected and d_end_os > self.expected:
+            self.expected = d_end_os
 
     def get(self, max_size):
         size = min(max_size, self.expected)
         if size <= 0:
             return None
         data = []
-        #eprint('ConnectionReceiveWindow.get() size: {}'.format(size))
-        if size > (self.WINDOW_SIZE - self.start):
-            # Need to wrap around
-            #eprint('ConnectionReceiveWindow.get() wrap around')
-            data = self._arr[self.start:]
-            self._arr[self.start:] = [None] * (self.WINDOW_SIZE - self.start)
-            size -= self.WINDOW_SIZE - self.start
-            self.start = 0
-        #eprint('ConnectionReceiveWindow.get() data post wrap: {}'.format(len(data)))
-        data += self._arr[self.start:self.start + size]
-        #eprint('ConnectionReceiveWindow.get() data post add: {}'.format(len(data)))
-        self._arr[self.start:self.start + size] = [None] * size
-        self.start += size
+
+        forward_offset = self.WINDOW_SIZE - self.start
+        if forward_offset >= size: # does not have to wrap
+            data = self._arr[self.start:self.start + size]
+        else: # has to be split and wrap
+            data = self._arr[self.start:self.WINDOW_SIZE]
+            data += self._arr[:self.start + size - self.WINDOW_SIZE]
+
+        self.start = (self.start + size) % self.WINDOW_SIZE
         self.expected -= size
+        # SUBTRACT SIZE FROM ALL RANGES IN INTERVAL TREE AS WELL
+
+        assert(size == len(data))
+
         return bytes(data)
 
     def ready(self):
         return self.expected > 0
 
-    def _calculate_expected(self, offset):
+    def _calculate_expected(self):
         # This is probably not the most efficient way of calculating the next_ack offset
         # but for this size of window hopefully it'll be performant enough
         for i in range(self.WINDOW_SIZE):
             if self._arr[(self.start + i) % self.WINDOW_SIZE] is None:
                 return i
-        #eprint('What is self.WINDOW_SIZE? It is {}'.format(self.WINDOW_SIZE))
         return self.WINDOW_SIZE
 
 class ConnectionClosedException(Exception):
