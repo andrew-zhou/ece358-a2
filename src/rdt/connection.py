@@ -70,12 +70,12 @@ class Connection(object):
                 raise ConnectionClosedException()
             with self.recv_buffer.lock:
                 if self.recv_buffer.buffer.ready():
-                    eprint('Buffer is expected to have: {} bytes'.format(self.recv_buffer.buffer.expected))
+                    #eprint('Buffer is expected to have: {} bytes'.format(self.recv_buffer.buffer.expected))
                     data = self.recv_buffer.buffer.get(max_size)
                     break
-            sleep(2)
+            sleep(0.1)
 
-        eprint('Received {} bytes of data to application'.format(len(data)))
+        #eprint('Received {} bytes of data to application'.format(len(data)))
         # Shift the base ack
         self.ack = (self.ack + len(data)) % self.MAX_SEQ
         return data
@@ -130,7 +130,7 @@ class Connection(object):
         with self.send_buffer.lock:
             for _, block in self.send_buffer.buffer:
                 self._send(block.data, block.flags, block.seq)
-        eprint('Timed out')
+        #eprint('Timed out')
 
     def _receive_segment(self, segment):
         """This is called by the connection manager to put segments received
@@ -173,7 +173,7 @@ class Connection(object):
         offset = seq - self.ack if seq >= self.ack else (seq + self.MAX_SEQ - self.ack)
         if len(segment.payload) > 0:
             with self.recv_buffer.lock:
-                eprint('Segment seq: {}'.format(seq))
+                #eprint('Segment seq: {}'.format(seq))
                 self.recv_buffer.buffer.put(segment.payload, offset)
                 self.next_ack = (self.ack + self.recv_buffer.buffer.expected) % self.MAX_SEQ
 
@@ -307,45 +307,39 @@ class ConnectionReceiveWindow(object):
         if not trimmed_data:
             return
 
-        eprint('ConnectionReceiveWindow.put(), start: {}, offset: {}, trim_data_len: {}'.format(self.start, offset, len(trimmed_data)))	
+        #eprint('ConnectionReceiveWindow.put(), start: {}, offset: {}, trim_data_len: {}'.format(self.start, offset, len(trimmed_data)))	
 
         ini = self.start + offset
         if ini < self.WINDOW_SIZE:
             forward_length = min(len(trimmed_data), self.WINDOW_SIZE - ini)
             self._arr[ini:ini+forward_length] = trimmed_data[:forward_length]
             wrap_length = len(trimmed_data) - forward_length
-            eprint('Forward length: {}, wrap length: {}'.format(forward_length, wrap_length))
+            #eprint('Forward length: {}, wrap length: {}'.format(forward_length, wrap_length))
             if wrap_length > 0:
                 self._arr[:wrap_length] = trimmed_data[forward_length:]
         else:
             ini -= self.WINDOW_SIZE
             self._arr[ini:ini + len(trimmed_data)] = trimmed_data
 
-        if len(trimmed_data) < Connection.MAX_PAYLOAD_SIZE:
-            print('How big is my array? {}'.format(len(self._arr)))
-            for b in range(len(self._arr)):
-                if self._arr[b] is None:
-                    print('Holy shit we have a problem: {}'.format(b))
-
         self.expected = self._calculate_expected(offset + len(trimmed_data))
-        eprint('Stored {} bytes of data into recv buffer; expected (offset from start) is now: {}'.format(len(trimmed_data), self.expected))
+        #eprint('Stored {} bytes of data into recv buffer; expected (offset from start) is now: {}'.format(len(trimmed_data), self.expected))
 
     def get(self, max_size):
         size = min(max_size, self.expected)
         if size <= 0:
             return None
         data = []
-        eprint('ConnectionReceiveWindow.get() size: {}'.format(size))
+        #eprint('ConnectionReceiveWindow.get() size: {}'.format(size))
         if size > (self.WINDOW_SIZE - self.start):
             # Need to wrap around
-            eprint('ConnectionReceiveWindow.get() wrap around')
+            #eprint('ConnectionReceiveWindow.get() wrap around')
             data = self._arr[self.start:]
             self._arr[self.start:] = [None] * (self.WINDOW_SIZE - self.start)
             size -= self.WINDOW_SIZE - self.start
             self.start = 0
-        eprint('ConnectionReceiveWindow.get() data post wrap: {}'.format(len(data)))
+        #eprint('ConnectionReceiveWindow.get() data post wrap: {}'.format(len(data)))
         data += self._arr[self.start:self.start + size]
-        eprint('ConnectionReceiveWindow.get() data post add: {}'.format(len(data)))
+        #eprint('ConnectionReceiveWindow.get() data post add: {}'.format(len(data)))
         self._arr[self.start:self.start + size] = [None] * size
         self.start += size
         self.expected -= size
@@ -358,9 +352,9 @@ class ConnectionReceiveWindow(object):
         # This is probably not the most efficient way of calculating the next_ack offset
         # but for this size of window hopefully it'll be performant enough
         for i in range(self.WINDOW_SIZE):
-            if self._arr[(self.start + offset + i) % self.WINDOW_SIZE] is None:
-                return offset + i
-        eprint('What is self.WINDOW_SIZE? It is {}'.format(self.WINDOW_SIZE))
+            if self._arr[(self.start + i) % self.WINDOW_SIZE] is None:
+                return i
+        #eprint('What is self.WINDOW_SIZE? It is {}'.format(self.WINDOW_SIZE))
         return self.WINDOW_SIZE
 
 class ConnectionClosedException(Exception):
