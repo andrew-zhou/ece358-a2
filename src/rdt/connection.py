@@ -1,6 +1,7 @@
 #!/bin/python3
 
 from rdt.segment import Segment, SegmentFlags
+from rdt.itree import IntervalList
 
 from collections import deque
 from enum import Enum
@@ -292,11 +293,12 @@ class ConnectionBuffer(object):
 
 class ConnectionReceiveWindow(object):
     """Circular buffer. Keeps track of base and next ack."""
-    WINDOW_SIZE = 2 ** 24
+    WINDOW_SIZE = 2 ** 16
     def __init__(self):
         self._arr = [None] * self.WINDOW_SIZE
         self.start = 0  # Index of start of circular buffer
         self.expected = 0  # How many bytes of data we have stored in buffer
+        self.future_intervals = IntervalList()
 
     def put(self, data, offset):
         """"Offset is offset from expected to start of data. 0 means it is at the same spot as offset"""
@@ -306,6 +308,8 @@ class ConnectionReceiveWindow(object):
         d_end_os = d_start_os + len(trimmed_data)
 
         # TODO INSERT THIS RANGE INTO INTERVAL TREE
+        if d_end_os > self.expected:
+            self.future_intervals.insert(d_start_os, d_end_os)
 
         d_start = self.start + d_start_os # Actual addresses of the data, ignoring wrap
         d_end = self.start + d_end_os
@@ -316,12 +320,17 @@ class ConnectionReceiveWindow(object):
         elif forward_offset < 0: # start has to wrap
             self._arr[d_start - self.WINDOW_SIZE:d_end - self.WINDOW_SIZE] = trimmed_data
         else: # has to be split and wrap
-            self._arr[d_start:self.WINDOW_SIZE]
-            self._arr[:d_end - self.WINDOW_SIZE]
+            # print('put wrap')
+            self._arr[d_start:self.WINDOW_SIZE] = trimmed_data[:forward_offset]
+            self._arr[:d_end - self.WINDOW_SIZE] = trimmed_data[forward_offset:]
 
         # CHECK INTERVAL TREE with self.expected, update it if possible
-        if d_start_os <= self.expected and d_end_os > self.expected:
-            self.expected = d_end_os
+        # if d_start_os <= self.expected and d_end_os > self.expected:
+        #     self.expected = d_end_os
+        new_expected = self.future_intervals.remove_if_exists(self.expected)
+        # print('remove if exists')
+        if new_expected is not None:
+            self.expected = new_expected
 
     def get(self, max_size):
         size = min(max_size, self.expected)
@@ -333,12 +342,15 @@ class ConnectionReceiveWindow(object):
         if forward_offset >= size: # does not have to wrap
             data = self._arr[self.start:self.start + size]
         else: # has to be split and wrap
+            # print('get wrap')
             data = self._arr[self.start:self.WINDOW_SIZE]
             data += self._arr[:self.start + size - self.WINDOW_SIZE]
 
         self.start = (self.start + size) % self.WINDOW_SIZE
         self.expected -= size
         # SUBTRACT SIZE FROM ALL RANGES IN INTERVAL TREE AS WELL
+        self.future_intervals.subtract(size)
+        # print('subtracted from future intervals')
 
         assert(size == len(data))
 
