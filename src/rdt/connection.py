@@ -11,7 +11,7 @@ from time import sleep
 from util import *
 
 class Connection(object):
-    TIMEOUT_INTERVAL = 2
+    TIMEOUT_INTERVAL = 4
     MAX_PAYLOAD_SIZE = 800
     MAX_SEQ = 2 ** 32
 
@@ -159,8 +159,8 @@ class Connection(object):
                         self.send_buffer.buffer.appendleft((new_seq, new_block))
                         # eprint('PARTIAL REPUT ACK FOR: {}'.format(new_seq))
                     bytes_to_ack -= len(block.data)
-                if not self.send_buffer.buffer:
-                    self.timer.stop()
+                # if not self.send_buffer.buffer:
+                #     self.timer.stop()
 
         # Store payload in recv buffer
         seq = segment.seq
@@ -265,12 +265,15 @@ class ConnectionSendTimer(object):
 
     def start(self):
         if not self.is_running:
+            # eprint('Starting timer!!!')
             self._timer = Timer(self.interval, self._run)
             self._timer.daemon = True
             self._timer.start()
             self.is_running = True
 
     def stop(self):
+        # if self.is_running:
+        #     eprint('Stoping timer!!!')
         self._timer.cancel()
         self.is_running = False
 
