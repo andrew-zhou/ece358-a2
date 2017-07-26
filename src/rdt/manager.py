@@ -4,11 +4,13 @@ from rdt.checksum import verify_checksum
 from rdt.connection import Connection, ConnectionStatus
 from rdt.segment import Segment, SegmentFlags
 
+from queue import Queue
 from socket import socket, AF_INET, SOCK_DGRAM
 from sys import stderr
 from threading import Thread, Lock
 
 class Manager(object):
+    NUM_THREADS = 20
     def __init__(self, ip, port, conn_queue):
         """Manager acts as a bridge between the high-level RDT Connections and
         low-level UDP socket. It binds a UDP socket to a given IP/Port,
@@ -29,16 +31,27 @@ class Manager(object):
         self.connections = {}
         self.connections_lock = Lock()  # Lock to access self.connections
         self.socket = socket(AF_INET, SOCK_DGRAM)
+        self.datagrams = Queue()        
 
     def start(self):
         self.socket.bind((self.ip, self.port))
+        threads = []
+        for _ in range(self.NUM_THREADS):
+            t = Thread(target=self._handle_thread)
+            t.daemon = True
+            threads.append(t)
+        for t in threads:
+            t.start()
 
         # Main socket loop
         while True:
             datagram, addr = self.socket.recvfrom(4096)
-            t = Thread(target=self._handle_datagram, kwargs={'datagram': datagram, 'addr': addr})
-            t.daemon = True
-            t.start()
+            self.datagrams.put((addr, datagram))
+
+    def _handle_thread(self):
+        while True:
+            addr, datagram = self.datagrams.get()
+            self._handle_datagram(addr, datagram)
 
     def _handle_datagram(self, addr, datagram):
         # Sanity checks

@@ -43,7 +43,8 @@ class FileServer:
         except PermissionError as pe:
             eprint("Error with permissions on file %s. Raw error %s" % (file_path, pe))
             conn.close()
-        except:
+        except Exception as e:
+            raise Exception() from e
             eprint("Unexpected error: %s" % sys.exc_info()[0])
             if conn.status() != ConnectionStatus.CLOSED:
                 conn.close()
