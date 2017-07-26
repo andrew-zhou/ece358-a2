@@ -293,7 +293,7 @@ class ConnectionBuffer(object):
 
 class ConnectionReceiveWindow(object):
     """Circular buffer. Keeps track of base and next ack."""
-    WINDOW_SIZE = 2 ** 16
+    WINDOW_SIZE = 2 ** 24
     def __init__(self):
         self._arr = [None] * self.WINDOW_SIZE
         self.start = 0  # Index of start of circular buffer
@@ -351,8 +351,6 @@ class ConnectionReceiveWindow(object):
         # SUBTRACT SIZE FROM ALL RANGES IN INTERVAL TREE AS WELL
         self.future_intervals.subtract(size)
         # print('subtracted from future intervals')
-
-        assert(size == len(data))
 
         return bytes(data)
 
