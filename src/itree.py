@@ -95,6 +95,6 @@ if __name__ == '__main__':
     query_tests = []
     for test_seq in query_tests:
         for query_val in test_seq:
-            itl.remove_if_exists(query_val)
-            print('Remove {} -> {}'.format(query_val, itl))
+            removed_interval_max_val = itl.remove_if_exists(query_val)
+            print('Remove {} returns {} -> {}'.format(query_val, removed_interval_max_val, itl))
 
