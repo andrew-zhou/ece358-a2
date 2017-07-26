@@ -31,7 +31,8 @@ class Manager(object):
         self.connections = {}
         self.connections_lock = Lock()  # Lock to access self.connections
         self.socket = socket(AF_INET, SOCK_DGRAM)
-        self.datagrams = Queue()        
+        self.segments = Queue()
+        self.partial_segments = {}
 
     def start(self):
         self.socket.bind((self.ip, self.port))
@@ -46,39 +47,43 @@ class Manager(object):
         # Main socket loop
         while True:
             datagram, addr = self.socket.recvfrom(4096)
-            self.datagrams.put((addr, datagram))
+            # Add data to partial segments
+            if addr not in self.partial_segments:
+                self.partial_segments[addr] = bytearray()
+            self.partial_segments[addr] += datagram
+            # Check if partial segment is complete segment
+            seg_bytes = self.partial_segments[addr]
+            if len(seg_bytes) >= 20:  # Must be at least size of header
+                segment = Segment.from_bytes(bytes(seg_bytes))
+                if segment.size == len(seg_bytes):
+                    # This is a full segment, remove from partial segments, add to queue
+                    del self.partial_segments[addr]
+                    self.segments.put((addr, segment, seg_bytes))
 
     def _handle_thread(self):
         while True:
-            addr, datagram = self.datagrams.get()
-            self._handle_datagram(addr, datagram)
+            addr, segment, seg_bytes = self.segments.get()
+            self._handle_segment(addr, segment, seg_bytes)
 
-    def _handle_datagram(self, addr, datagram):
+    def _handle_segment(self, addr, segment, seg_bytes):
         # Sanity checks
-        segment = None
-        is_syn = False
-        seg_key = None
+        is_syn = segment.flags.syn
+        seg_key = (addr[0], segment.source)
+        valid = True
         try:
-            if isinstance(datagram, str):
-                datagram = datagram.encode()
-            elif not isinstance(datagram, bytes):
-                datagram = bytes(datagram)
-            segment = Segment.from_bytes(datagram)
-            is_syn = segment.flags.syn
-            seg_key = (addr[0], segment.source)
-            verify_checksum(datagram)
+            verify_checksum(seg_bytes)
             if self.port != segment.dest or addr[1] != segment.source:
                 raise Exception('Port does not match.')
         except Exception as e:
             print('Invalid segment received.', file=stderr)
-            if not is_syn and seg_key:
+            valid = False
+            if not is_syn:
                 # Send back an ACK
                 with self.connections_lock:
                     conn = self.connections.get(seg_key)
                     if conn:
                         conn._send(b'', SegmentFlags(ack=True), conn.next_seq)
-
-        if not segment:
+        if not valid:
             return
 
         # Check if segment is attempting to SYN
