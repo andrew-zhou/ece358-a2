@@ -26,6 +26,7 @@ def application_recv(conn):
         raw_bytes = conn.recv(message_length)
         message += raw_bytes
         message_length -= len(raw_bytes)
+        # eprint('Received {} bytes of data so far'.format(len(message)))
     return message
 
 """Binds the socket to localhost and an open port from
