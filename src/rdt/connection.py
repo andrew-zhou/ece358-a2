@@ -2,8 +2,8 @@
 
 from rdt.segment import Segment, SegmentFlags
 
+from collections import deque
 from enum import Enum
-from heapq import heappush, heappop
 from socket import socket, AF_INET, SOCK_DGRAM
 from threading import Lock, Timer
 from time import sleep
@@ -24,7 +24,7 @@ class Connection(object):
             my_port: (int) Port of current client
         """
         self.tcb = ConnectionTCB(my_ip, my_port, their_ip, their_port)
-        self.send_buffer = ConnectionBuffer(buf=[])
+        self.send_buffer = ConnectionBuffer(buf=deque())
         self.recv_buffer = ConnectionBuffer(buf=ConnectionReceiveWindow())
         self.timer = ConnectionSendTimer(self.TIMEOUT_INTERVAL, self._timeout)
         self.seq = 0  # Keep track of the earliest sent un-ack'd segment 
@@ -101,7 +101,7 @@ class Connection(object):
         # Add to send_buffer
         block = ConnectionSentBlock(data, seq, flags)
         with self.send_buffer.lock:
-            heappush(self.send_buffer.buffer, (seq, block))
+            self.send_buffer.buffer.append((seq, block))
 
         # Start timer if not already started
         self.timer.start()
@@ -115,16 +115,6 @@ class Connection(object):
 
         # Send via. UDP
         self.send_socket.sendto(segment.to_bytes(), self.peer())
-
-    # def _timeout(self):
-    #     # Get data/seq/flags for segment corresponding to self.seq
-    #     block = None
-    #     with self.send_buffer.lock:
-    #         block = self.send_buffer.buffer[0][1] if self.send_buffer.buffer else None
-
-    #     # Re-send segment
-    #     if block:
-    #         self._send(block.data, block.flags, block.seq)
 
     def _timeout(self):
         with self.send_buffer.lock:
@@ -157,13 +147,13 @@ class Connection(object):
                 bytes_to_ack = _bytes_to_ack(ack, self.seq, self.next_seq)
                 self.seq = (self.seq + bytes_to_ack) % self.MAX_SEQ
                 while bytes_to_ack > 0 and self.send_buffer.buffer:
-                    seq, block = heappop(self.send_buffer.buffer)
+                    seq, block = self.send_buffer.buffer.popleft()
                     if len(block.data) > bytes_to_ack:
                         # Do a partial ACK
                         new_data = block.data[bytes_to_ack:]
-                        new_seq = seq + bytes_to_ack
+                        new_seq = (seq + bytes_to_ack) % self.MAX_SEQ
                         new_block = ConnectionSentBlock(new_data, new_seq, block.flags)
-                        heappush(self.send_buffer.buffer, (new_seq, new_block))
+                        self.send_buffer.buffer.appendleft((new_seq, new_block))
                     bytes_to_ack -= len(block.data)
                 if not self.send_buffer.buffer:
                     self.timer.stop()
