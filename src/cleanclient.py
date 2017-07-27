@@ -151,7 +151,7 @@ class NiceClient(object):
 
 
 if __name__ == '__main__':
-    port, file_dir = get_args(2)
-    ip = get_non_loopback_ip()
+    port, = get_args(1)
+    ip = "0.0.0.0"
     client = NiceClient(ip, int(port))
     client.start()
