@@ -64,6 +64,6 @@ class FileServer:
 
 if __name__ == '__main__':
     port, file_dir = get_args(2)
-    ip = "0.0.0.0"
+    ip = get_non_loopback_ip()
     server = FileServer(ip, int(port), file_dir)
     server.start()

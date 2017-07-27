@@ -1,18 +1,16 @@
 #!/bin/python3
 
 from rdt.checksum import verify_checksum
-from rdt.connection import Connection, ConnectionStatus, ConnectionSendTimer
+from rdt.connection import Connection, ConnectionStatus
 from rdt.segment import Segment, SegmentFlags
 
 from queue import Queue
 from socket import socket, AF_INET, SOCK_DGRAM
 from sys import stderr
-from threading import Thread, Lock, Timer
+from threading import Thread, Lock
 
 class Manager(object):
     NUM_THREADS = 20
-    RECEIVE_RATE = 2000.0
-    RECEIVE_TIMEOUT = 1.0
     def __init__(self, ip, port, conn_queue):
         """Manager acts as a bridge between the high-level RDT Connections and
         low-level UDP socket. It binds a UDP socket to a given IP/Port,
@@ -33,10 +31,7 @@ class Manager(object):
         self.connections = {}
         self.connections_lock = Lock()  # Lock to access self.connections
         self.socket = socket(AF_INET, SOCK_DGRAM)
-        self.datagrams = Queue()
-
-        self.receive_timer = ConnectionSendTimer(self.RECEIVE_TIMEOUT, self._reset_receive_count)
-        self.receive_timer.start()
+        self.datagrams = Queue()        
 
     def start(self):
         self.socket.bind((self.ip, self.port))
@@ -52,10 +47,6 @@ class Manager(object):
         while True:
             datagram, addr = self.socket.recvfrom(4096)
             self.datagrams.put((addr, datagram))
-
-    def _reset_receive_count(self):
-        self.receive_count = 0
-        # print('RESET')
 
     def _handle_thread(self):
         while True:
@@ -117,9 +108,6 @@ class Manager(object):
                 if conn and conn.status() == ConnectionStatus.ESTAB:
                     conn._recv_fin(segment)
         else:
-            if self.receive_count >= self.RECEIVE_RATE:
-                # print('REJECT {}'.format(self.receive_count))
-                return
             with self.connections_lock:
                 conn = self.connections.get(seg_key)
                 if not conn:
@@ -132,4 +120,3 @@ class Manager(object):
                         return
                 if conn.status() == ConnectionStatus.ESTAB:
                     conn._receive_segment(segment)
-                    self.receive_count += 1
