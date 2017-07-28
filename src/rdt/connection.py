@@ -1,4 +1,5 @@
 #!/bin/python3
+import random
 
 from rdt.segment import Segment, SegmentFlags
 from rdt.itree import IntervalList
@@ -28,8 +29,8 @@ class Connection(object):
         self.send_buffer = ConnectionBuffer(buf=deque())
         self.recv_buffer = ConnectionBuffer(buf=ConnectionReceiveWindow())
         self.timer = ConnectionSendTimer(self.TIMEOUT_INTERVAL, self._timeout)
-        self.seq = 0  # Keep track of the earliest sent un-ack'd segment 
-        self.next_seq = 0  # Keep track of the next seq number to send
+        self.seq = random.randint(0, 2 ** 32 - 1)  # Keep track of the earliest sent un-ack'd segment 
+        self.next_seq = self.seq  # Keep track of the next seq number to send
         self.ack = 0  # Keep track of the earliest received segment not sent to client
         self.next_ack = 0  # Keep track of the next expected seq number from peer
         self.send_socket = send_socket or socket(AF_INET, SOCK_DGRAM)

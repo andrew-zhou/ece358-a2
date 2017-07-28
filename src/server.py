@@ -17,7 +17,7 @@ class FileServer:
 
     def _handle_connection(self, conn):
         client_ip, client_port = conn.peer()
-        eprint("Established connection with client at %s %s" % (client_ip, client_port))
+        # eprint("Established connection with client at %s %s" % (client_ip, client_port))
         file_name = "%s.%s.%s.%s" % (client_ip, client_port, self.ip, self.port)
         file_path = os.path.join(self.file_dir, file_name)
         try:
@@ -44,13 +44,12 @@ class FileServer:
             eprint("Error with permissions on file %s. Raw error %s" % (file_path, pe))
             conn.close()
         except Exception as e:
-            raise Exception() from e
-            eprint("Unexpected error: %s" % sys.exc_info()[0])
+            eprint("Unexpected error: %s" % e)
             if conn.status() != ConnectionStatus.CLOSED:
                 conn.close()
 
     def start(self):
-        eprint("Listening at %s %d" % (self.ip, self.port))
+        # eprint("Listening at %s %d" % (self.ip, self.port))
         conn_queue = Queue()
         m = Manager(self.ip, self.port, conn_queue)
         t = Thread(target=m.start)
@@ -64,6 +63,6 @@ class FileServer:
 
 if __name__ == '__main__':
     port, file_dir = get_args(2)
-    ip = get_non_loopback_ip()
+    ip = "0.0.0.0"
     server = FileServer(ip, int(port), file_dir)
     server.start()

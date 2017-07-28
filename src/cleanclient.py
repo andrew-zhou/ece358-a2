@@ -132,7 +132,8 @@ class NiceClient(object):
                 min_t = time_taken
                 
 
-                for trial in range(1, 100):
+                for trial in range(1, 20):
+                    print('Trial {}'.format(trial))
                     start = datetime.now()
                     application_send(connections[(server_ip, server_port)], file_data)
                     data = application_recv(connections[(server_ip, server_port)])
@@ -152,6 +153,6 @@ class NiceClient(object):
 
 if __name__ == '__main__':
     port, file_dir = get_args(2)
-    ip = get_non_loopback_ip()
+    ip = "0.0.0.0"
     client = NiceClient(ip, int(port))
     client.start()
